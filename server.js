@@ -1,71 +1,65 @@
 /*
-    server.js
+    taskController.js
 
-    Main script for our Node.js server.
-    This script will create the Express application and add routers for our REST API
+    REST API controller for /tasks
 */
 'use strict';
 
-var sqlite3 = require('sqlite3');
 var express = require('express');
-var bodyParser = require('body-parser');
+var _db;
 
-var tasksController = require('./controllers/taskController');
+function getAllTasks(req, res, next) {
+    _db.all('select rowid, title, done from Tasks where done=0', function (err, rows) {
+        if(err) {
+            return next(err);
+        }
 
-//open the database
-var dbPath = __dirname + '/data/tasks.db';
-var db = new sqlite3.Database(dbPath, function(err) {
-    if (err) {
-        throw err;
+        res.json(rows);
+
+    });
+}
+
+function insertTask(req, res, next) {
+    //every ask must hae a tittle property that is non-blank
+    if(!req.body.title || 0 == req.body.title.trim().length) {
+        return next({statusCode: 400, message: 'All tasks must have title!'});
     }
+    _db.run('insert into tasks(title, done) values(?, 0)', req.body.title, function(err) {
+        if(err) {
+            return next(err);
+        }
+        res.json({rowid: this.lastID});
+    });
+}
 
-    var createTablesSql = 'create table if not exists Tasks (title text, done int);';
-    db.run(createTablesSql, function() {
-
-        //create an express application
-        var app = express();
-
-        //use the JSON parser from bodyParser
-
-        //serve static files from the /static sub-directory
-        app.use(express.static(__dirname + '/static'));
-
-        //create a router for our REST API
-
-        //add routers from our various controllers
-        //for now, all we have is a tasksController
-
-        //mount all REST API resources under an /api resource
-        //all of the controller resources will be relative to this
-
-        //finally, add an error handler that sends back the error info as JSON
-        app.use(function(err, req, res, next) {
-            if (undefined == err.statusCode || 500 == err.statusCode) {
-                console.error(err);
+function updateTask(req, res, next) {
+    _db.run('update Tasks set done=? where rowid=?', req.body.done, req.params.id, function(err) {
+            if(err) {
+                return next(err);
             }
-
-            res.status(err.statusCode || 500).json({message: err.message || err.toString()});
+            res.json({rowsAffected: this.changes});
         });
 
-        //start the web server
-        var server = app.listen(8080, function() {
-            console.log('listening for requests sent to http://localhost:%s', server.address().port);
-        });
+}
+module.exports.Router = function(db) {
+    //hold on to database reference
+    _db = db;
 
-        //listen for the SIGINT signal (Ctrl+C) and shut down the database gracefully
-        process.on('SIGINT', function() {
-            console.log('closing database...');
-            db.close(function(err) {
-                if (err) {
-                    console.log('error closing database! ' + err);
-                    process.exit(1);
-                }
-                else {
-                    console.log('database is safely closed.');
-                    process.exit(0);
-                }
-            }); //db.close()
-        }); //on SIGINT
-    }); //create tables
-}); //open database
+    //create a router for our routes
+    var router = express.Router();
 
+    //add routes for:
+
+    //GET /tasks (gets all undone tasks)
+    router.get('/tasks', getAllTasks);
+
+    //POST /tasks (inserts new task)
+    router.post('/tasks', insertTask);
+
+    //GET /tasks/:id (gets a particular task)
+    //PUT /tasks/:id (updates a particular task)
+    router.put('/tasks/:id', updateTask);
+    //DELETE /tasks/:id (deletes a particular task)
+
+    return router;
+};
